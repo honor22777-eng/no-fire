@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>공기소화기 시뮬레이션</title>
+<style>
+  :root {
+    --bg-deep: #14161A;
+    --bg-panel: #1D2025;
+    --panel-border: #2E323A;
+    --red-700: #7A1F1E;
+    --red-500: #C8352E;
+    --red-300: #E8635A;
+    --gold: #D8B565;
+    --gold-soft: #EAD9A8;
+    --metal-light: #C7CBD1;
+    --metal-dark: #6B707A;
+    --text-primary: #EDEEF0;
+    --text-secondary: #9AA0AA;
+    --success: #4FAE7A;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 20%, #1E2126 0%, var(--bg-deep) 70%);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    padding: 24px;
+  }
+  .card {
+    width: 100%;
+    max-width: 400px;
+    background: var(--bg-panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 20px;
+    padding: 32px 28px 28px;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.3);
+  }
+  .eyebrow {
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--gold);
+    text-transform: uppercase;
+    margin: 0 0 6px;
+    text-align: center;
+  }
+  h1 {
+    font-family: Georgia, "Noto Serif KR", serif;
+    font-weight: 500;
+    font-size: 20px;
+    color: var(--text-primary);
+    margin: 0 0 4px;
+    text-align: center;
+  }
+  .sub {
+    font-size: 13px;
+    color: var(--text-secondary);
+    text-align: center;
+    margin: 0 0 24px;
+  }
+  #stageWrap {
+    position: relative;
+    width: 100%;
+    max-width: 320px;
+    margin: 0 auto;
+  }
+  svg#stage { display: block; width: 100%; height: auto; overflow: visible; }
+
+  #extended {
+    transition: opacity 0.45s cubic-bezier(.4,0,.2,1), transform 0.45s cubic-bezier(.4,0,.2,1);
+    transform-origin: 160px 220px;
+  }
+  #folded > * {
+    opacity: 0;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+  }
+
+  .flame-flicker { animation: flicker 1s ease-in-out infinite; }
+  @keyframes flicker {
+    0%, 100% { transform: scaleX(1) skewX(0deg); }
+    35% { transform: scaleX(0.93) skewX(-1.5deg); }
+    65% { transform: scaleX(1.05) skewX(1.5deg); }
+  }
+  #fireGroup {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    transition: transform 0.35s ease-out, opacity 0.35s ease-out;
+  }
+  .smoke-puff {
+    fill: #9AA0AA;
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+  .smoke-puff.show {
+    opacity: 0.55;
+    animation: drift 3.5s ease-in-out infinite;
+  }
+  @keyframes drift {
+    0% { transform: translate(0,0) scale(1); opacity: 0.55; }
+    50% { transform: translate(-3px,-10px) scale(1.12); opacity: 0.35; }
+    100% { transform: translate(0,-20px) scale(1.2); opacity: 0; }
+  }
+
+  #backBtn { cursor: pointer; transition: transform 0.15s ease; }
+  #backBtn .hitArea { cursor: pointer; }
+  #backBtn:hover circle.knob { fill: var(--metal-light); }
+  #backBtn:active { transform: scale(0.92); }
+  #backBtn:focus-visible circle.ring2 { stroke: var(--gold); stroke-width: 2.5; }
+  #backBtn[aria-disabled="true"] { cursor: default; }
+  #backBtn[aria-disabled="true"] .hitArea { cursor: default; }
+  #backBtn[aria-disabled="true"] circle.knob { fill: #2A2D33; }
+  #backBtn:not([aria-disabled="true"]) circle.ring2 {
+    stroke: var(--gold);
+    stroke-width: 1.5;
+    opacity: 0.6;
+    animation: pulseRing 1.6s ease-out infinite;
+  }
+  @keyframes pulseRing {
+    0% { r: 14; opacity: 0.6; }
+    100% { r: 22; opacity: 0; }
+  }
+
+  .ring {
+    fill: none;
+    stroke: #D7DBE0;
+    stroke-width: 5;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .checkmark {
+    stroke: var(--success);
+    stroke-width: 3;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 40;
+    stroke-dashoffset: 40;
+    transition: stroke-dashoffset 0.5s ease 0.15s;
+  }
+
+  #progressRow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin: 20px 0 10px;
+  }
+  #progressTrack {
+    position: relative;
+    flex: 1;
+    max-width: 200px;
+    height: 6px;
+    border-radius: 3px;
+    background: #2A2D33;
+    overflow: hidden;
+  }
+  #progressFill {
+    position: absolute;
+    inset: 0;
+    width: 0%;
+    background: linear-gradient(90deg, var(--red-500), var(--gold));
+    border-radius: 3px;
+    transition: width 0.3s cubic-bezier(.4,0,.2,1);
+  }
+  #progressCount {
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    color: var(--text-secondary);
+    min-width: 34px;
+    text-align: right;
+  }
+  #status {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    text-align: center;
+    margin: 0 0 18px;
+    min-height: 20px;
+  }
+  #status.success { color: var(--success); }
+
+  .actions { display: flex; justify-content: center; gap: 10px; }
+  button.pill {
+    padding: 10px 22px;
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    border-radius: 999px;
+    border: 1px solid var(--panel-border);
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+  }
+  button.pill:hover { background: rgba(255,255,255,0.05); border-color: var(--gold); }
+  button.pill:active { transform: scale(0.96); }
+  button.pill:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  button.pill.primary { background: var(--gold); color: #2B2210; border-color: var(--gold); }
+  button.pill.primary:hover { background: var(--gold-soft); }
+  button.pill[hidden] { display: none; }
+
+  .sr-only {
+    position: absolute; width: 1px; height: 1px;
+    padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+</style>
+</head>
+<body>
+
+<main class="card">
+  <p class="eyebrow">Air Extinguisher · Prototype</p>
+  <h1>화재 진화 시뮬레이션</h1>
+  <p class="sub">뒤편 버튼을 7번 눌러 연기 고리를 쏘아 불을 진화하세요</p>
+
+  <div id="stageWrap">
+    <svg id="stage" viewBox="0 0 320 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">
+      <defs>
+        <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#3A2A24"/>
+          <stop offset="100%" stop-color="#1D2025"/>
+        </linearGradient>
+        <linearGradient id="bodyGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="var(--red-300)"/>
+          <stop offset="55%" stop-color="var(--red-500)"/>
+          <stop offset="100%" stop-color="var(--red-700)"/>
+        </linearGradient>
+        <linearGradient id="legGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="var(--metal-light)"/>
+          <stop offset="100%" stop-color="var(--metal-dark)"/>
+        </linearGradient>
+        <radialGradient id="flameGrad" cx="50%" cy="30%" r="75%">
+          <stop offset="0%" stop-color="#FFE9A8"/>
+          <stop offset="45%" stop-color="var(--gold)"/>
+          <stop offset="100%" stop-color="var(--red-500)"/>
+        </radialGradient>
+        <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow dx="0" dy="6" stdDeviation="6" flood-color="#000" flood-opacity="0.35"/>
+        </filter>
+      </defs>
+
+      <rect x="0" y="0" width="320" height="205" fill="url(#skyGrad)"/>
+      <rect x="0" y="205" width="320" height="55" fill="#101215"/>
+
+      <g id="extended">
+        <g id="fireScene">
+          <rect x="34" y="176" width="70" height="14" rx="2" fill="#4A3626"/>
+          <rect x="42" y="160" width="54" height="16" rx="2" fill="#5A422E"/>
+          <rect x="50" y="145" width="38" height="15" rx="2" fill="#4A3626"/>
+          <ellipse class="smoke-puff" id="smokePuff" cx="68" cy="130" rx="22" ry="12"/>
+          <g id="fireGroup" class="flame-flicker">
+            <path d="M68,60 C82,82 92,96 78,116 C94,106 102,90 94,72 C102,84 108,94 100,110 C112,98 118,80 106,58 C112,72 114,82 106,92 C100,74 90,62 68,60 Z"
+                  fill="url(#flameGrad)"/>
+          </g>
+        </g>
+
+        <g id="legs">
+          <rect x="188" y="176" width="12" height="58" rx="5" fill="url(#legGrad)" transform="rotate(-7 194 176)"/>
+          <rect x="220" y="176" width="12" height="58" rx="5" fill="url(#legGrad)" transform="rotate(6 226 176)"/>
+        </g>
+
+        <g id="body" filter="url(#softShadow)" transform="rotate(-11 210 140)">
+          <rect x="160" y="98" width="112" height="86" rx="10" fill="url(#bodyGrad)"/>
+          <circle cx="186" cy="141" r="15" fill="#3E0F0E"/>
+          <circle cx="186" cy="141" r="15" fill="none" stroke="#000" stroke-opacity="0.25" stroke-width="1"/>
+          <text x="252" y="130" text-anchor="middle" font-family="Georgia, serif" font-weight="700" font-size="17" fill="var(--gold-soft)" transform="rotate(2 252 130)">119</text>
+          <rect x="152" y="146" width="10" height="10" rx="2" fill="#7A1F1E"/>
+
+          <g id="backBtn" tabindex="0" role="button" aria-label="소화기 뒤편 버튼, 눌러서 연기 고리 분사" aria-disabled="false">
+            <circle class="hitArea" cx="265" cy="170" r="34" fill="transparent"/>
+            <circle class="knob" cx="265" cy="170" r="10" fill="#3A3D42" stroke="#8C9099" stroke-width="1.5"/>
+            <circle class="ring2" cx="265" cy="170" r="14" fill="none" stroke="transparent" stroke-width="0"/>
+          </g>
+        </g>
+      </g>
+
+      <g id="folded">
+        <rect x="150" y="192" width="120" height="16" rx="4" fill="var(--red-700)" style="transition-delay:0s"/>
+        <rect x="160" y="174" width="100" height="16" rx="4" fill="var(--red-500)" style="transition-delay:0.08s"/>
+        <rect x="172" y="156" width="76" height="16" rx="4" fill="var(--red-500)" style="transition-delay:0.16s"/>
+        <rect x="184" y="140" width="52" height="14" rx="4" fill="var(--red-300)" style="transition-delay:0.24s"/>
+        <path class="checkmark" d="M196,126 L206,136 L226,112" style="transition-delay:0.4s"/>
+      </g>
+
+      <g id="ringLayer"></g>
+    </svg>
+  </div>
+
+  <div id="progressRow">
+    <div id="progressTrack" role="presentation"><div id="progressFill"></div></div>
+    <span id="progressCount">0/7</span>
+  </div>
+
+  <p id="status" aria-live="polite">뒤편 버튼을 눌러 진화를 시작하세요</p>
+
+  <div class="actions">
+    <button id="tidyBtn" class="pill primary" type="button" hidden>정리하기</button>
+    <button id="resetBtn" class="pill" type="button" hidden>다시 시작</button>
+  </div>
+
+  <span class="sr-only">소화기 뒤편 버튼을 탭 또는 엔터 키로 7번 눌러 진화를 완료하면 진화 성공 메시지와 정리하기 버튼이 나타납니다. 정리하기를 누르면 소화기가 접혀 정리된 모습으로 바뀝니다.</span>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var MAX_CLICKS = 7;
+  var clicks = 0;
+  var phase = 'active';
+
+  var backBtn = document.getElementById('backBtn');
+  var extended = document.getElementById('extended');
+  var foldedGroup = document.getElementById('folded');
+  var foldedChildren = foldedGroup.children;
+  var fireGroup = document.getElementById('fireGroup');
+  var smokePuff = document.getElementById('smokePuff');
+  var ringLayer = document.getElementById('ringLayer');
+  var progressFill = document.getElementById('progressFill');
+  var progressCount = document.getElementById('progressCount');
+  var status = document.getElementById('status');
+  var tidyBtn = document.getElementById('tidyBtn');
+  var resetBtn = document.getElementById('resetBtn');
+
+  var NS = 'http://www.w3.org/2000/svg';
+  var NOZZLE = { x: 168, y: 150 };
+  var TARGET = { x: 78, y: 118 };
+
+  function setBackDisabled(disabled) {
+    backBtn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    backBtn.tabIndex = disabled ? -1 : 0;
+  }
+
+  function updateProgress() {
+    var pct = Math.round((clicks / MAX_CLICKS) * 100);
+    progressFill.style.width = pct + '%';
+    progressCount.textContent = clicks + '/' + MAX_CLICKS;
+  }
+
+  function updateFireScale() {
+    var remaining = Math.max(MAX_CLICKS - clicks, 0) / MAX_CLICKS;
+    fireGroup.style.transform = 'scale(' + Math.max(remaining, 0.001) + ')';
+    fireGroup.style.opacity = String(Math.max(remaining, 0));
+  }
+
+  function spawnRing() {
+    if (typeof ringLayer.animate !== 'function' && !ringLayer.ownerDocument) return;
+    var el = document.createElementNS(NS, 'circle');
+    el.setAttribute('class', 'ring');
+    el.setAttribute('cx', '0');
+    el.setAttribute('cy', '0');
+    el.setAttribute('r', '7');
+    ringLayer.appendChild(el);
+
+    var midX = (NOZZLE.x + TARGET.x) / 2;
+    var midY = Math.min(NOZZLE.y, TARGET.y) - 22;
+
+    var anim = el.animate([
+      { transform: 'translate(' + NOZZLE.x + 'px,' + NOZZLE.y + 'px) scale(0.5)', opacity: 0.9 },
+      { transform: 'translate(' + midX + 'px,' + midY + 'px) scale(1)', opacity: 0.75, offset: 0.55 },
+      { transform: 'translate(' + TARGET.x + 'px,' + TARGET.y + 'px) scale(1.4)', opacity: 0 }
+    ], { duration: 620, easing: 'ease-out' });
+
+    anim.onfinish = function () {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    };
+  }
+
+  function handleExtinguish() {
+    if (phase !== 'active' || clicks >= MAX_CLICKS) return;
+
+    clicks += 1;
+    updateProgress();
+    spawnRing();
+    updateFireScale();
+
+    if (clicks < MAX_CLICKS) {
+      status.textContent = '불이 약해지고 있습니다 (' + clicks + '/' + MAX_CLICKS + ')';
+    } else {
+      phase = 'extinguished';
+      setBackDisabled(true);
+      smokePuff.classList.add('show');
+      window.setTimeout(function () {
+        status.textContent = '진화 성공';
+        status.classList.add('success');
+        tidyBtn.hidden = false;
+      }, 500);
+    }
+  }
+
+  function handleTidy() {
+    if (phase !== 'extinguished') return;
+    phase = 'folding';
+    tidyBtn.hidden = true;
+
+    extended.style.opacity = '0';
+    extended.style.transform = 'scale(0.88)';
+
+    window.setTimeout(function () {
+      for (var i = 0; i < foldedChildren.length; i++) {
+        foldedChildren[i].style.opacity = '1';
+      }
+      var checkPath = foldedGroup.querySelector('.checkmark');
+      checkPath.style.strokeDashoffset = '0';
+      status.textContent = '정리 완료';
+      resetBtn.hidden = false;
+      phase = 'folded';
+    }, 420);
+  }
+
+  function reset() {
+    clicks = 0;
+    phase = 'active';
+    updateProgress();
+    updateFireScale();
+    setBackDisabled(false);
+    smokePuff.classList.remove('show');
+
+    extended.style.opacity = '1';
+    extended.style.transform = 'scale(1)';
+
+    for (var i = 0; i < foldedChildren.length; i++) {
+      foldedChildren[i].style.opacity = '0';
+    }
+    var checkPath = foldedGroup.querySelector('.checkmark');
+    checkPath.style.strokeDashoffset = '40';
+
+    tidyBtn.hidden = true;
+    resetBtn.hidden = true;
+    status.classList.remove('success');
+    status.textContent = '뒤편 버튼을 눌러 진화를 시작하세요';
+  }
+
+  backBtn.addEventListener('click', handleExtinguish);
+  backBtn.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleExtinguish();
+    }
+  });
+  tidyBtn.addEventListener('click', handleTidy);
+  resetBtn.addEventListener('click', reset);
+
+  updateProgress();
+  updateFireScale();
+  setBackDisabled(false);
+})();
+</script>
+
+</body>
+</html>
